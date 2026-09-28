@@ -1,123 +1,128 @@
 /* Eegai G Meet Auto admin & attendance tracker — service worker */
-importScripts('lib/common.js');
+importScripts('config.js', 'lib/common.js');
 
-const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const STALE_SESSION_MS = 3 * 60 * 1000;
+const CONNECT_TIMEOUT_MS = 5 * 60 * 1000;
 
-/* ---------------- auth ---------------- */
-function getToken(interactive) {
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: !!interactive }, result => {
-      const err = chrome.runtime.lastError;
-      const token = result && typeof result === 'object' ? result.token : result;
-      if (err || !token) reject(new Error((err && err.message) || 'Not signed in'));
-      else resolve(token);
+/* ---------------- Google connection (Apps Script bridge, no Cloud Console) ----------------
+ * The extension talks to a Google Apps Script web app (apps-script/Code.gs) that runs as the
+ * signed-in Google user. It creates and appends to that user's own attendance Sheet.
+ * The browser's Google login cookies authenticate the request — no OAuth client ID needed. */
+async function webAppUrl() {
+  const custom = (await EG.getLocal('webAppUrl', '')).trim();
+  return custom || (self.EG_CONFIG && self.EG_CONFIG.WEBAPP_URL) || '';
+}
+
+class NeedsConnect extends Error {}
+
+async function bridge(action, payload) {
+  const url = await webAppUrl();
+  if (!url) throw new Error('The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).');
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action }, payload || {}))
     });
-  });
-}
-
-function dropToken(token) {
-  return new Promise(resolve => chrome.identity.removeCachedAuthToken({ token }, resolve));
-}
-
-async function googleFetch(url, options = {}, retried) {
-  const token = await getToken(false);
-  const res = await fetch(url, Object.assign({}, options, {
-    headers: Object.assign({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, options.headers || {})
-  }));
-  if (res.status === 401 && !retried) {
-    await dropToken(token);
-    return googleFetch(url, options, true);
+  } catch (e) {
+    throw new Error('Network error — check your internet connection');
   }
-  return res;
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) {
+    // Google returned a login / permission page instead of JSON
+    throw new NeedsConnect('Please sign in with Google again to allow saving to your Sheet');
+  }
+  if (!data.ok) throw new Error(data.error || 'Google Sheet error');
+  return data;
+}
+
+let connecting = null;
+
+function connectInteractive() {
+  if (connecting) return connecting;
+  connecting = (async () => {
+    const url = await webAppUrl();
+    if (!url) throw new Error('The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).');
+    const win = await chrome.windows.create({ url: url + '?action=connect', type: 'popup', width: 560, height: 720, focused: true });
+    let closed = false;
+    const onRemoved = id => { if (id === win.id) closed = true; };
+    chrome.windows.onRemoved.addListener(onRemoved);
+    try {
+      const started = Date.now();
+      while (Date.now() - started < CONNECT_TIMEOUT_MS) {
+        await new Promise(r => setTimeout(r, 2500));
+        try {
+          const info = await bridge('ping');
+          if (!closed) chrome.windows.remove(win.id).catch(() => {});
+          return info;
+        } catch (e) {
+          if (!(e instanceof NeedsConnect)) throw e;
+          if (closed) throw new Error('Sign-in window was closed before finishing');
+        }
+      }
+      throw new Error('Sign-in timed out — please try again');
+    } finally {
+      chrome.windows.onRemoved.removeListener(onRemoved);
+    }
+  })();
+  connecting.finally(() => { connecting = null; });
+  return connecting;
 }
 
 async function signIn() {
-  const token = await getToken(true);
-  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: 'Bearer ' + token } });
-  if (!res.ok) throw new Error('Could not read your Google profile (' + res.status + ')');
-  const info = await res.json();
-  const profile = { email: info.email, name: info.name || info.email, picture: info.picture || '', signedInAt: Date.now() };
+  let info;
+  try { info = await bridge('ping'); } catch (e) {
+    if (!(e instanceof NeedsConnect)) throw e;
+    info = await connectInteractive();
+  }
+  const email = info.email || '';
+  const profile = {
+    email,
+    name: info.name || email.split('@')[0] || 'Google user',
+    picture: '',
+    sheetUrl: info.sheetUrl || '',
+    signedInAt: Date.now()
+  };
   await EG.setLocal('profile', profile);
-  ensureSheet().catch(() => {});
   syncPending().catch(() => {});
   return profile;
 }
 
 async function signOut() {
-  try {
-    const token = await getToken(false);
-    await fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(token), { method: 'POST' }).catch(() => {});
-    await dropToken(token);
-  } catch (e) { /* already signed out */ }
-  if (chrome.identity.clearAllCachedAuthTokens) await chrome.identity.clearAllCachedAuthTokens();
+  // We never hold Google tokens; disconnecting just forgets the account locally.
   await chrome.storage.local.remove('profile');
 }
 
-/* ---------------- Google Sheet ---------------- */
-async function sheetIdFor(email) {
-  const sheets = await EG.getLocal('sheets', {});
-  return sheets[email] || '';
-}
-
-async function createSheet(email) {
-  const res = await googleFetch(SHEETS_API, {
-    method: 'POST',
-    body: JSON.stringify({
-      properties: { title: EG.SHEET_TITLE },
-      sheets: [{ properties: { title: EG.SHEET_TAB, gridProperties: { frozenRowCount: 1 } } }]
-    })
-  });
-  if (!res.ok) throw new Error('Could not create Google Sheet (' + res.status + ')');
-  const data = await res.json();
-  const id = data.spreadsheetId;
-  const tabId = data.sheets[0].properties.sheetId;
-
-  await googleFetch(SHEETS_API + '/' + id + '/values/' + EG.SHEET_TAB + '!A1:I1?valueInputOption=RAW', {
-    method: 'PUT', body: JSON.stringify({ values: [EG.REPORT_HEADERS] })
-  });
-  await googleFetch(SHEETS_API + '/' + id + ':batchUpdate', {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: [
-        {
-          repeatCell: {
-            range: { sheetId: tabId, startRowIndex: 0, endRowIndex: 1 },
-            cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.53, blue: 0.31 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } } } },
-            fields: 'userEnteredFormat(backgroundColor,textFormat)'
-          }
-        },
-        { autoResizeDimensions: { dimensions: { sheetId: tabId, dimension: 'COLUMNS', startIndex: 0, endIndex: 9 } } }
-      ]
-    })
-  }).catch(() => {});
-
-  const sheets = await EG.getLocal('sheets', {});
-  sheets[email] = id;
-  await EG.setLocal('sheets', sheets);
-  return id;
+async function saveSheetUrl(sheetUrl) {
+  const profile = await EG.getLocal('profile', null);
+  if (profile && sheetUrl && profile.sheetUrl !== sheetUrl) {
+    profile.sheetUrl = sheetUrl;
+    await EG.setLocal('profile', profile);
+  }
 }
 
 async function ensureSheet(forceNew) {
   const profile = await EG.getLocal('profile', null);
   if (!profile) throw new Error('Please sign in with Google first');
-  let id = forceNew ? '' : await sheetIdFor(profile.email);
-  if (id) {
-    const res = await googleFetch(SHEETS_API + '/' + id + '?fields=spreadsheetId');
-    if (res.ok) return id;
-    if (res.status !== 404 && res.status !== 403) throw new Error('Google Sheets error (' + res.status + ')');
+  const info = await bridge(forceNew ? 'newSheet' : 'ping');
+  if (info.email && profile.email && info.email.toLowerCase() !== profile.email.toLowerCase()) {
+    throw new Error('Your browser is now signed in to Google as ' + info.email + ', not ' + profile.email + '. Sign out and sign in again.');
   }
-  return createSheet(profile.email);
+  await saveSheetUrl(info.sheetUrl);
+  return info.sheetUrl;
 }
 
 async function appendReport(report) {
-  const id = await ensureSheet();
+  const profile = await EG.getLocal('profile', null);
+  if (!profile) throw new Error('Please sign in with Google first');
   const rows = EG.reportRows(report);
-  if (!rows.length) return id;
-  const url = SHEETS_API + '/' + id + '/values/' + EG.SHEET_TAB + '!A:I:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
-  const res = await googleFetch(url, { method: 'POST', body: JSON.stringify({ values: rows }) });
-  if (!res.ok) throw new Error('Could not write to Google Sheet (' + res.status + ')');
-  return id;
+  const info = await bridge('append', { rows, expectEmail: profile.email });
+  await saveSheetUrl(info.sheetUrl);
+  return info.sheetUrl;
 }
 
 /* ---------------- reports ---------------- */
@@ -138,8 +143,8 @@ async function syncReport(id) {
   const report = reports.find(r => r.id === id);
   if (!report) throw new Error('Report not found');
   try {
-    const sheetId = await appendReport(report);
-    return updateReport(id, r => { r.sheet = { synced: true, error: '', sheetId, at: Date.now() }; });
+    const sheetUrl = await appendReport(report);
+    return updateReport(id, r => { r.sheet = { synced: true, error: '', sheetUrl, at: Date.now() }; });
   } catch (e) {
     await updateReport(id, r => { r.sheet = { synced: false, error: e.message }; });
     throw e;
@@ -227,8 +232,8 @@ chrome.alarms.onAlarm.addListener(a => {
 const handlers = {
   async getState() {
     const [profile, settings] = await Promise.all([EG.getLocal('profile', null), EG.getSettings()]);
-    const sheetId = profile ? await sheetIdFor(profile.email) : '';
-    return { profile, settings, sheetUrl: EG.sheetUrl(sheetId) };
+    const connectorReady = !!(await webAppUrl());
+    return { profile, settings, connectorReady, sheetUrl: (profile && profile.sheetUrl) || '' };
   },
   async signIn() { return { profile: await signIn() }; },
   async signOut() { await signOut(); return {}; },
@@ -254,8 +259,7 @@ const handlers = {
   async syncReport(msg) { const r = await syncReport(msg.id); return { report: r }; },
   async syncPending() { return { count: await syncPending() }; },
   async ensureSheet(msg) {
-    const id = await ensureSheet(!!msg.forceNew);
-    return { sheetUrl: EG.sheetUrl(id) };
+    return { sheetUrl: await ensureSheet(!!msg.forceNew) };
   },
   async openPage(msg) {
     await chrome.tabs.create({ url: chrome.runtime.getURL(msg.path || 'dashboard/dashboard.html') });

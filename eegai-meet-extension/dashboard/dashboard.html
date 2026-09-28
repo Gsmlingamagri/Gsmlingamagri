@@ -36,6 +36,8 @@
       <li><b>When the meeting ends</b> the report opens, the CSV downloads and the rows are added to your Sheet.</li>
     </ol>
     <button id="welcomeSignIn" class="btn blue pill big">Sign in with Google</button>
+    <p class="muted small">A Google window opens — choose your Gmail account and click <b>Allow</b> once. No passwords are stored by Eegai.</p>
+    <p id="connectorMissing" class="error hidden">Setup needed: the Google Sheet connector URL is empty. Open <a href="#settings">Settings</a> and paste the Apps Script web app URL (see README).</p>
     <p id="welcomeError" class="error hidden"></p>
   </div>
 </section>
@@ -185,6 +187,15 @@
     </div>
 
     <div class="card">
+      <h3>Google Sheet connector</h3>
+      <p class="muted">Apps Script web app URL used to save attendance to Google Sheets. Leave empty to use the built-in one.</p>
+      <div class="add-row">
+        <input id="webAppUrl" class="input" placeholder="https://script.google.com/macros/s/.../exec">
+        <button id="saveWebAppUrl" class="btn">Save</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Auto Admit</h3>
       <label class="set"><span>Automatically admit people asking to join</span><span class="switch"><input data-set="autoAdmit" type="checkbox"><span></span></span></label>
       <label class="set"><span>Who to admit</span>
@@ -229,6 +240,15 @@
       <p>Once you are inside a Google Meet call, Eegai records each participant's first join time, last leave time and total time in the call (rejoins are added up). When you leave the call or close the tab, the report is generated.</p>
       <p>Google Sheet columns: <code>Meeting Name | Meeting ID | Date | Participant | Email | In Time | Out Time | Duration | Attendance</code></p>
     </div>
+    <div class="card">
+      <h3>Google Sheet connector</h3>
+      <p class="muted">Apps Script web app URL used to save attendance to Google Sheets. Leave empty to use the built-in one.</p>
+      <div class="add-row">
+        <input id="webAppUrl" class="input" placeholder="https://script.google.com/macros/s/.../exec">
+        <button id="saveWebAppUrl" class="btn">Save</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Auto Admit</h3>
       <p>Inside a meeting, click the <b>Auto Admit</b> button in the green Eegai panel (top-right). When it is ON, anyone who asks to join is let in automatically. You must be the host or a co-host for Meet to show the Admit button.</p>

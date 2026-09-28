@@ -76,3 +76,4 @@ table.compact td .input { padding: 5px 8px; }
 .set:first-of-type { border-top: 0; }
 .input.narrow { width: auto; min-width: 110px; }
 .row-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.small { font-size: 12px; }

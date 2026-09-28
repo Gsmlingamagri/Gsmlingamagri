@@ -14,7 +14,7 @@ let currentList = null; // working copy being edited
 function showTab() {
   let tab = (location.hash || '#reports').slice(1);
   if (!['welcome', 'reports', 'lists', 'settings', 'help'].includes(tab)) tab = 'reports';
-  if (!state.profile && tab !== 'help') tab = 'welcome';
+  if (!state.profile && tab !== 'help' && !(tab === 'settings' && !state.connectorReady)) tab = 'welcome';
   if (state.profile && tab === 'welcome') tab = 'reports';
   $$('.page').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
   $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
@@ -38,10 +38,12 @@ function renderAccount() {
   $('#acctBtn').textContent = p ? 'Sign Out' : 'Sign In';
   $('#acctPic').classList.toggle('hidden', !(p && p.picture));
   if (p && p.picture) { $('#acctPic').src = p.picture; $('#acctPic').title = p.email; }
-  $('#acctLine').textContent = p ? 'Signed in as ' + p.name + ' (' + p.email + ')' : 'Not signed in';
+  $('#acctLine').textContent = p ? 'Signed in as ' + p.email : 'Not signed in';
+  $('#connectorMissing').classList.toggle('hidden', !!state.connectorReady);
 }
 
 async function doSignIn(errEl) {
+  if (errEl) errEl.classList.add('hidden');
   const r = await EG.send({ type: 'signIn' });
   if (!r.ok) {
     const msg = 'Sign-in failed: ' + r.error;
@@ -357,7 +359,16 @@ $('#exportList').addEventListener('click', () => {
 });
 
 /* ================= settings ================= */
+$('#saveWebAppUrl').addEventListener('click', async () => {
+  const v = $('#webAppUrl').value.trim();
+  if (v && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)) return EG.toast('Paste the Web app URL ending in /exec', true);
+  await EG.setLocal('webAppUrl', v);
+  EG.toast('Connector saved');
+  loadAll();
+});
+
 function renderSettings() {
+  EG.getLocal('webAppUrl', '').then(v => { $('#webAppUrl').value = v; });
   $$('[data-set]').forEach(el => {
     const v = state.settings[el.dataset.set];
     if (el.type === 'checkbox') el.checked = !!v;

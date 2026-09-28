@@ -23,28 +23,28 @@
     "service_worker": "background.js"
   },
   "options_page": "dashboard/dashboard.html",
-  "permissions": ["storage", "identity", "alarms"],
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
   "host_permissions": [
     "https://meet.google.com/*",
-    "https://sheets.googleapis.com/*",
-    "https://www.googleapis.com/*",
-    "https://oauth2.googleapis.com/*"
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://meet.google.com/*"],
-      "js": ["lib/common.js", "content/meet.js"],
-      "css": ["content/meet.css"],
+      "matches": [
+        "https://meet.google.com/*"
+      ],
+      "js": [
+        "lib/common.js",
+        "content/meet.js"
+      ],
+      "css": [
+        "content/meet.css"
+      ],
       "run_at": "document_idle"
     }
-  ],
-  "oauth2": {
-    "client_id": "YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
-    "scopes": [
-      "openid",
-      "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/userinfo.profile",
-      "https://www.googleapis.com/auth/drive.file"
-    ]
-  }
+  ]
 }

@@ -1,0 +1,18 @@
+{
+  "timeZone": "Asia/Kolkata",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "dependencies": {
+    "enabledAdvancedServices": [
+      { "userSymbol": "Sheets", "serviceId": "sheets", "version": "v4" }
+    ]
+  },
+  "webapp": {
+    "executeAs": "USER_ACCESSING",
+    "access": "ANYONE"
+  }
+}

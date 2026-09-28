@@ -9,7 +9,7 @@ A free Chrome extension for Google Meet with two main jobs:
 
 | Feature | Details |
 |---|---|
-| Google sign-in (required) | Users sign in with their Gmail account. On first install the dashboard opens with a **Sign in with Google** screen, and tracking stays off until they sign in. |
+| Google sign-in (required) | Users sign in with their Gmail account, which uses the Apps Script connector, so no Google Cloud Console setup is needed. On first install the dashboard opens with a **Sign in with Google** screen, and tracking stays off until they sign in. |
 | Auto Admit button in Meet | A green **Eegai Meet** panel appears in every meeting. Click **Auto Admit** to turn it ON or OFF. When it's ON, "Admit" and "Admit all" requests are accepted automatically. Settings can limit this to **only people in your participant lists**. |
 | Attendance tracking | Starts on its own when you join a call. For each person it logs first In time, last Out time, total duration (rejoins are added up) and the number of joins. |
 | Report on meeting end | When you leave the call or close the tab, a popup window opens with the participant report and the CSV downloads automatically. |
@@ -23,31 +23,30 @@ A free Chrome extension for Google Meet with two main jobs:
 1. Download this folder (`eegai-meet-extension/`).
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select the `eegai-meet-extension` folder.
-4. Copy the **extension ID** that Chrome shows. You need it for the Google sign-in setup below.
+4. Complete the one-time **Google Sheet connector** setup below.
 
-## One-time Google sign-in setup (OAuth client ID)
+## Google Sheet connector (one-time setup, no Google Cloud Console)
 
-Signing in and saving to Google Sheets both use Google's OAuth. Google needs a client ID that belongs to you:
+The extension saves to Google Sheets through a small **Google Apps Script** web app (`apps-script/`). You deploy it **once**, as the extension owner. Your users never have to do this.
 
-1. Go to <https://console.cloud.google.com/> and create a project, for example "Eegai Meet".
-2. Under **APIs & Services → Library**, enable the **Google Sheets API**.
-3. Under **APIs & Services → OAuth consent screen**:
-   - Choose **External**.
-   - Fill in the app name and support email.
-   - Add these scopes: `userinfo.email`, `userinfo.profile` and `.../auth/drive.file`.
-   - While testing, add your Gmail address as a test user.
-4. Under **APIs & Services → Credentials → Create credentials → OAuth client ID**:
-   - Choose the application type **Chrome Extension**.
-   - Paste your extension ID.
-5. Copy the client ID into `manifest.json`, replacing `YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com`.
-6. Reload the extension in `chrome://extensions`.
+1. Open <https://script.google.com> and click **New project**. Name it "Eegai G Meet Connector".
+2. Replace the contents of `Code.gs` with [`apps-script/Code.gs`](apps-script/Code.gs).
+3. Go to **Project Settings** (gear icon) and tick **Show "appsscript.json" manifest file in editor**. Then replace that file's contents with [`apps-script/appsscript.json`](apps-script/appsscript.json).
+4. Click **Deploy → New deployment**, choose the type **Web app**, and set:
+   - **Execute as:** *User accessing the web app*
+   - **Who has access:** *Anyone with Google account*
+5. Click **Deploy**. Approve access for your own account, then copy the **Web app URL** (it ends in `/exec`).
+6. Paste the URL into [`config.js`](config.js) as `WEBAPP_URL: 'https://script.google.com/macros/s/.../exec'`, then reload the extension.
+   You can instead paste it under **Settings → Google Sheet connector** in the extension.
 
-Keeping the same extension ID:
+How it works for your users:
 
-- An unpacked extension's ID can change if it is loaded from a different folder. To keep it fixed while developing, add a `"key"` to `manifest.json` (see Chrome's docs).
-- After you publish to the Chrome Web Store, create the OAuth client with the **store** extension ID.
+- **Signing in:** they click **Sign in with Google**. A Google window opens where they pick their Gmail account and click **Allow** once.
+- **Their own sheet:** each user gets their **own** "Eegai G Meet Attendance" sheet in **their own** Drive.
+- **Minimal access:** the script only asks for `drive.file` (it can see only the sheet it creates) and your email address.
+- **No verification:** both of those are non-sensitive scopes, so Google does not require app verification.
 
-The `drive.file` scope only lets the extension see the spreadsheet it creates. It cannot read any of your other Drive files.
+If you later change `Code.gs`, go to **Deploy → Manage deployments**, edit the deployment and choose **New version**. This keeps the same URL.
 
 ## How to use
 
@@ -63,13 +62,16 @@ The `drive.file` scope only lets the extension see the spreadsheet it creates. I
 
 - **Emails.** Google Meet does not show participants' email addresses. Eegai fills in the email by matching each display name to your participant lists. For your own row it uses your signed-in email.
 - **How detection works.** Google Meet has no public attendance API, so the extension reads the Meet page itself (the People panel and the video tiles). It opens the People panel once so that everyone is counted, not just the people whose tiles are on screen. For the most reliable results, use Meet in **English**.
-- **Browsers.** Sign-in uses `chrome.identity.getAuthToken`, which works in Google Chrome. It does not work in Edge, Brave or other Chromium browsers.
+- **Several Google accounts in one browser.** The connector uses the browser's **default** Google account (the first one you signed in to). If a user switches accounts, the extension notices and asks them to sign in again.
+- **Browsers.** It works in Chrome, Edge, Brave and other Chromium browsers.
 
 ## Files
 
 ```
-manifest.json          MV3 manifest (permissions: storage, identity, alarms)
-background.js          Sign-in, Google Sheets, turning sessions into reports, report window, retries
+manifest.json          MV3 manifest (permissions: storage, alarms)
+config.js              Connector web app URL (set once)
+apps-script/           Google Sheet connector (Code.gs + appsscript.json), deployed at script.google.com
+background.js          Sign-in and Google Sheets (via the connector), turning sessions into reports, report window, retries
 content/meet.js        Runs on meet.google.com: attendance tracking, Auto Admit, floating panel
 lib/common.js          Shared helpers: CSV, formatting, building reports
 lib/ui.css             Shared styles
