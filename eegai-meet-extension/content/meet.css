@@ -1,0 +1,52 @@
+#eegai-widget {
+  position: fixed;
+  top: 76px;
+  right: 16px;
+  z-index: 2147483000;
+  width: 250px;
+  font: 13px/1.35 "Google Sans", Roboto, Arial, sans-serif;
+  color: #1f2937;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  user-select: none;
+}
+#eegai-widget * { box-sizing: border-box; font-family: inherit; }
+#eegai-widget .eg-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: #1a8a4f; color: #fff; cursor: move;
+}
+#eegai-widget .eg-logo { display: inline-flex; }
+#eegai-widget .eg-title { flex: 1; font-weight: 700; letter-spacing: .2px; }
+#eegai-widget .eg-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: transparent; color: #fff; cursor: pointer;
+}
+#eegai-widget .eg-icon-btn:hover { background: rgba(255, 255, 255, .18); }
+#eegai-widget .eg-body { padding: 10px 12px 12px; display: grid; gap: 9px; }
+#eegai-widget.eg-collapsed .eg-body { display: none; }
+#eegai-widget .eg-status { display: flex; align-items: center; gap: 8px; color: #4b5563; }
+#eegai-widget .eg-dot { width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; flex: none; }
+#eegai-widget.eg-tracking .eg-dot { background: #16a34a; box-shadow: 0 0 0 0 rgba(22, 163, 74, .6); animation: eg-pulse 1.8s infinite; }
+#eegai-widget.eg-signed-out .eg-dot { background: #f59e0b; }
+@keyframes eg-pulse { 70% { box-shadow: 0 0 0 7px rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
+#eegai-widget .eg-admit {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border: 1.5px solid #d1d5db; border-radius: 999px;
+  background: #f9fafb; color: #374151; cursor: pointer; text-align: left; font-size: 13px;
+}
+#eegai-widget .eg-admit:hover { border-color: #1a8a4f; }
+#eegai-widget .eg-admit.eg-on { background: #1a8a4f; border-color: #1a8a4f; color: #fff; }
+#eegai-widget .eg-admit small { opacity: .85; font-size: 11px; }
+#eegai-widget .eg-row { display: flex; gap: 8px; }
+#eegai-widget .eg-link {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px; border: 0; border-radius: 8px;
+  background: #e8f5ee; color: #14683c; font-weight: 600; font-size: 12px; cursor: pointer;
+}
+#eegai-widget .eg-link:hover { background: #d3ecdf; }
+#eegai-widget .eg-signin { background: #1a73e8; color: #fff; }
+#eegai-widget .eg-signin:hover { background: #1765cc; }

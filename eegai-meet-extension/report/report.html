@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance Report — Eegai G Meet</title>
+<link rel="icon" href="../icons/icon32.png">
+<link rel="stylesheet" href="../lib/ui.css">
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand"><img src="../icons/icon48.png" alt="">Eegai G Meet — Attendance Report</span>
+  <div class="nav">
+    <button id="downloadCsv" class="btn signin">Download CSV</button>
+    <button id="openSheet" class="btn signin">Open Google Sheet</button>
+    <button id="printBtn" class="btn signin">Print</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="endedBanner" class="banner hidden">
+    <b>Meeting ended.</b> Your attendance report is ready<span id="bannerExtra"></span>.
+  </div>
+
+  <h1 id="title"></h1>
+  <p id="subtitle" class="muted"></p>
+
+  <div class="cards">
+    <div class="card"><small>Meeting date</small><b id="cDate"></b></div>
+    <div class="card"><small>Start – End</small><b id="cTime"></b></div>
+    <div class="card"><small>Duration</small><b id="cDuration"></b></div>
+    <div class="card"><small>Present</small><b id="cPresent" class="ok"></b></div>
+    <div class="card"><small>Absent</small><b id="cAbsent" class="bad"></b></div>
+    <div class="card"><small>Google Sheet</small><b id="cSheet"></b></div>
+  </div>
+
+  <div class="bar">
+    <input id="filter" class="input" type="search" placeholder="Filter participants">
+    <button id="syncBtn" class="btn blue sm hidden">Save to Google Sheet</button>
+    <button id="saveList" class="btn ghost sm">Save participants as a list</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th class="left">Participant</th>
+          <th class="left">Email</th>
+          <th>In Time</th>
+          <th>Out Time</th>
+          <th>Duration</th>
+          <th>Joins</th>
+          <th>Attendance</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p id="admitted" class="muted small"></p>
+  <p id="missing" class="empty hidden">Report not found. It may have been deleted.</p>
+</main>
+
+<script src="../lib/common.js"></script>
+<script src="report.js"></script>
+</body>
+</html>

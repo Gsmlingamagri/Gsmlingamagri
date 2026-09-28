@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eegai G Meet Auto admin &amp; attendance tracker</title>
+<link rel="icon" href="../icons/icon32.png">
+<link rel="stylesheet" href="../lib/ui.css">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#reports"><img src="../icons/icon48.png" alt="">Eegai G Meet Auto admin &amp; attendance tracker</a>
+  <nav class="nav">
+    <a href="#help" data-tab="help">Help Desk</a>
+    <a href="#lists" data-tab="lists">Participant Lists</a>
+    <a href="#reports" data-tab="reports">My Reports</a>
+    <a href="#settings" data-tab="settings">Settings</a>
+  </nav>
+  <div class="account">
+    <img id="acctPic" class="hidden" alt="">
+    <button id="acctBtn" class="btn signin">Sign In</button>
+  </div>
+</header>
+
+<!-- ================= Welcome / sign-in gate ================= -->
+<section id="tab-welcome" class="page hidden">
+  <div class="welcome">
+    <img src="../icons/icon128.png" alt="" width="96" height="96">
+    <h1>Welcome to Eegai G Meet</h1>
+    <p class="lead">Auto admit &amp; attendance tracker for Google Meet — completely free.</p>
+    <ol class="steps">
+      <li><b>Sign in with Google</b> — a Google Sheet called <i>Eegai G Meet Attendance</i> is created in your Drive.</li>
+      <li><b>Join a meeting</b> — attendance (join time, leave time and duration) is recorded automatically.</li>
+      <li><b>Turn on Auto Admit</b> from the floating Eegai panel in Meet to let people in without clicking.</li>
+      <li><b>When the meeting ends</b> the report opens, the CSV downloads and the rows are added to your Sheet.</li>
+    </ol>
+    <button id="welcomeSignIn" class="btn blue pill big">Sign in with Google</button>
+    <p id="welcomeError" class="error hidden"></p>
+  </div>
+</section>
+
+<!-- ================= My Reports ================= -->
+<section id="tab-reports" class="page hidden">
+  <h1 class="page-title">My Reports</h1>
+  <div class="stats">
+    <div class="stat">Your storage use:
+      <span class="meter" title=""><span id="storageBar"></span></span>
+      <small id="storageText" class="muted"></small>
+    </div>
+    <div class="stat">Total number of reports found: <b id="reportCount">0</b></div>
+  </div>
+
+  <div class="section-head">
+    <h2>Your Recent Meetings,</h2>
+    <a id="openSheetLink" href="#" class="sheet-link">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#0f9d58" d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 8h-6v8h-2v-8H5V9h6V5h2v4h6v2z"/></svg>
+      Open attendance Google Sheet
+    </a>
+  </div>
+
+  <div class="toolbar">
+    <label class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="search" type="search" placeholder="Search by Meeting Name or ID">
+    </label>
+    <span class="recover"><button id="syncAll" class="btn blue pill">
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+      Sync pending to Sheet</button></span>
+    <label class="auto-backup">
+      <span class="switch"><input id="autoBackup" type="checkbox"><span></span></span>
+      <b id="autoBackupText">Auto Backup (disabled)</b>
+    </label>
+    <button id="exportAll" class="btn ghost sm">Export all CSV</button>
+    <button id="deleteSelected" class="btn red sm hidden">Delete selected</button>
+    <div class="pager">
+      <span id="pageInfo">0 - 0 of 0</span>
+      <button id="prevPage" class="btn ghost sm" aria-label="Previous page">&lsaquo;</button>
+      <button id="nextPage" class="btn ghost sm" aria-label="Next page">&rsaquo;</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>S.No</th>
+          <th><input id="selectAll" type="checkbox" aria-label="Select all"></th>
+          <th class="left">Meeting Name</th>
+          <th>Meeting Date</th>
+          <th>Report Generated At</th>
+          <th>Meeting Duration</th>
+          <th>Share Report</th>
+          <th>Saved to Sheet</th>
+          <th>Total Participants</th>
+          <th>View Report</th>
+          <th>Delete Report</th>
+        </tr>
+      </thead>
+      <tbody id="reportRows"></tbody>
+    </table>
+    <p id="noReports" class="empty hidden">No reports yet. Join a Google Meet call and your attendance report will appear here when the meeting ends.</p>
+  </div>
+</section>
+
+<!-- ================= Participant Lists ================= -->
+<section id="tab-lists" class="page hidden">
+  <h1 class="page-title">Participant Lists</h1>
+  <p class="center muted">Save your participants' <b>Name</b> and <b>Mail ID</b> once. Link a list to a meeting link so the report fills in emails and marks who was absent.</p>
+
+  <div class="lists-layout">
+    <aside class="lists-side">
+      <div class="side-actions">
+        <button id="newList" class="btn">+ New list</button>
+        <button id="sampleCsv" class="btn ghost">Download sample CSV</button>
+      </div>
+      <div id="listCards" class="list-cards"></div>
+      <p id="noLists" class="muted hidden">No lists yet. Create one or upload a CSV.</p>
+    </aside>
+
+    <div class="list-editor">
+      <div id="editorEmpty" class="empty">Select a list on the left, or create a new one.</div>
+      <form id="editor" class="hidden" autocomplete="off">
+        <div class="editor-grid">
+          <div class="field">
+            <label for="listName">List name</label>
+            <input id="listName" class="input" required placeholder="e.g. Class 10-A / Weekly Team Sync">
+          </div>
+          <div class="field">
+            <label for="listLink">Meeting link (optional)</label>
+            <input id="listLink" class="input" placeholder="https://meet.google.com/abc-defg-hij">
+          </div>
+        </div>
+        <label class="check">
+          <input id="listDefault" type="checkbox">
+          Use this as the <b>default list</b> for meetings without a linked list
+        </label>
+
+        <div class="upload">
+          <div>
+            <b>Bulk add from CSV</b>
+            <div class="muted small">Columns: <code>Name,Email</code> — <a href="#" id="sampleCsv2">download sample</a></div>
+          </div>
+          <label class="btn ghost sm">Upload CSV
+            <input id="csvFile" type="file" accept=".csv,text/csv,text/plain" hidden>
+          </label>
+          <label class="check small"><input id="csvReplace" type="checkbox"> Replace existing</label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="grid compact">
+            <thead><tr><th>#</th><th class="left">Name</th><th class="left">Mail ID</th><th></th></tr></thead>
+            <tbody id="peopleRows"></tbody>
+          </table>
+        </div>
+        <div class="add-row">
+          <input id="addName" class="input" placeholder="Participant name">
+          <input id="addEmail" class="input" type="email" placeholder="participant@gmail.com">
+          <button id="addPerson" type="button" class="btn">Add</button>
+        </div>
+
+        <div class="editor-actions">
+          <button type="submit" class="btn">Save list</button>
+          <button id="exportList" type="button" class="btn ghost">Export CSV</button>
+          <button id="deleteList" type="button" class="btn red">Delete list</button>
+          <span id="peopleCount" class="muted"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Settings ================= -->
+<section id="tab-settings" class="page hidden">
+  <h1 class="page-title">Settings</h1>
+  <div class="settings">
+    <div class="card">
+      <h3>Google account</h3>
+      <p id="acctLine" class="muted"></p>
+      <div class="row-actions">
+        <button id="openSheetBtn" class="btn">Open attendance Sheet</button>
+        <button id="newSheetBtn" class="btn ghost">Create a new Sheet</button>
+        <button id="signOutBtn" class="btn red">Sign out</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Auto Admit</h3>
+      <label class="set"><span>Automatically admit people asking to join</span><span class="switch"><input data-set="autoAdmit" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Who to admit</span>
+        <select data-set="admitMode" class="input narrow">
+          <option value="all">Everyone asking to join</option>
+          <option value="listed">Only people in my participant lists</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
+      <h3>Attendance</h3>
+      <label class="set"><span>Show the Eegai panel on the Meet page</span><span class="switch"><input data-set="showWidget" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Open the People panel automatically (tracks everyone, not only visible tiles)</span><span class="switch"><input data-set="autoOpenPeoplePanel" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Mark people from the linked list who never joined as <b>Absent</b></span><span class="switch"><input data-set="includeAbsentees" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Minimum minutes to count as <b>Present</b> (less = Partial, 0 = off)</span><input data-set="minMinutesPresent" type="number" min="0" max="600" class="input narrow"></label>
+    </div>
+
+    <div class="card">
+      <h3>When a meeting ends</h3>
+      <label class="set"><span>Open the attendance report window</span><span class="switch"><input data-set="openReportOnEnd" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Download the CSV report automatically</span><span class="switch"><input data-set="autoDownloadCsv" type="checkbox"><span></span></span></label>
+      <label class="set"><span>Save rows to my Google Sheet (Auto Backup)</span><span class="switch"><input data-set="sheetSync" type="checkbox"><span></span></span></label>
+    </div>
+
+    <div class="card">
+      <h3>Data</h3>
+      <p class="muted">Reports and lists are stored in this browser. Your Google Sheet keeps a permanent copy.</p>
+      <div class="row-actions">
+        <button id="clearReports" class="btn red">Delete all reports</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Help ================= -->
+<section id="tab-help" class="page hidden">
+  <h1 class="page-title">Help Desk</h1>
+  <div class="settings">
+    <div class="card">
+      <h3>How attendance is taken</h3>
+      <p>Once you are inside a Google Meet call, Eegai records each participant's first join time, last leave time and total time in the call (rejoins are added up). When you leave the call or close the tab, the report is generated.</p>
+      <p>Google Sheet columns: <code>Meeting Name | Meeting ID | Date | Participant | Email | In Time | Out Time | Duration | Attendance</code></p>
+    </div>
+    <div class="card">
+      <h3>Auto Admit</h3>
+      <p>Inside a meeting, click the <b>Auto Admit</b> button in the green Eegai panel (top-right). When it is ON, anyone who asks to join is let in automatically. You must be the host or a co-host for Meet to show the Admit button.</p>
+      <p>Choose <i>Only people in my participant lists</i> in Settings to admit only known people.</p>
+    </div>
+    <div class="card">
+      <h3>Emails and absentees</h3>
+      <p>Google Meet does not show participants' email addresses. Eegai matches each participant's display name against your <a href="#lists">Participant Lists</a> to fill in the Mail ID. Link a list to a meeting link (or set a default list) to mark people who never joined as Absent.</p>
+      <p><a href="#" id="sampleCsv3">Download the sample CSV</a> to see the upload format.</p>
+    </div>
+    <div class="card">
+      <h3>Tips</h3>
+      <ul>
+        <li>Use Google Meet in English for the most reliable detection.</li>
+        <li>Keep the People panel open in large meetings so everyone is counted.</li>
+        <li>Reports that could not be saved to the Sheet (for example when offline) are retried automatically; you can also click <b>Sync pending to Sheet</b>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<script src="../lib/common.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

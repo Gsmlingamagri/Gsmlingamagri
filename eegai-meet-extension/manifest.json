@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Eegai G Meet Auto admin & attendance tracker",
+  "short_name": "Eegai Meet",
+  "version": "1.0.0",
+  "description": "Free Google Meet auto-admit and attendance tracker. Logs join/leave times, exports CSV and saves every meeting to one Google Sheet.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Eegai G Meet Auto admin & attendance tracker",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "dashboard/dashboard.html",
+  "permissions": ["storage", "identity", "alarms"],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://sheets.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["lib/common.js", "content/meet.js"],
+      "css": ["content/meet.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "oauth2": {
+    "client_id": "YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  }
+}
