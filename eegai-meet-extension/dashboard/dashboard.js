@@ -19,7 +19,15 @@ function showTab() {
   $$('.page').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
   $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
 }
-window.addEventListener('hashchange', showTab);
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#accounts') return openAccountsFromHash();
+  showTab();
+});
+function openAccountsFromHash() {
+  history.replaceState(null, '', state.profile ? '#reports' : '#welcome');
+  showTab();
+  chooseAccount(state.profile ? 'Switch account' : 'Sign in with Google');
+}
 
 async function loadAll() {
   state = await EG.send({ type: 'getState' });
@@ -30,40 +38,66 @@ async function loadAll() {
   renderReports();
   renderLists();
   renderSettings();
-  showTab();
+  if (location.hash === '#accounts') openAccountsFromHash(); else showTab();
 }
 
 function renderAccount() {
   const p = state.profile;
-  $('#acctBtn').textContent = p ? 'Sign Out' : 'Sign In';
-  $('#acctPic').classList.toggle('hidden', !(p && p.picture));
-  if (p && p.picture) { $('#acctPic').src = p.picture; $('#acctPic').title = p.email; }
+  $('#acctBtn').classList.toggle('hidden', !!p);
+  $('#acctMenu').classList.toggle('hidden', !p);
+  if (p) {
+    const av = $('#acctAvatar');
+    av.innerHTML = p.picture ? '<img class="ac-avatar" referrerpolicy="no-referrer" src="' + esc(p.picture) + '" alt="">' : esc((p.name || p.email).charAt(0).toUpperCase());
+    $('#acctEmail').textContent = p.email;
+    $('#dropName').textContent = p.name || p.email;
+    $('#dropEmail').textContent = p.email;
+  }
   $('#acctLine').textContent = p ? 'Signed in as ' + p.email : 'Not signed in';
   $('#connectorMissing').classList.toggle('hidden', !!state.connectorReady);
 }
 
-async function doSignIn(errEl) {
-  if (errEl) errEl.classList.add('hidden');
-  const r = await EG.send({ type: 'signIn' });
-  if (!r.ok) {
-    const msg = 'Sign-in failed: ' + r.error;
-    if (errEl) { errEl.textContent = msg; errEl.classList.remove('hidden'); } else EG.toast(msg, true);
-    return;
-  }
-  EG.toast('Signed in as ' + r.profile.email);
-  if (location.hash === '#welcome') location.hash = '#reports';
+function afterAccountChange(profile) {
+  if (profile && location.hash === '#welcome') location.hash = '#reports';
   loadAll();
+}
+
+function chooseAccount(title) {
+  EG.openAccountChooser({ title, onDone: afterAccountChange });
+}
+
+async function addAccount() {
+  EG.toast('Sign in to the new Gmail account in the Google window, then click Allow');
+  const r = await EG.send({ type: 'addAccount' });
+  if (!r.ok) return EG.toast('Could not add account: ' + r.error, true);
+  EG.toast('Signed in as ' + r.profile.email);
+  afterAccountChange(r.profile);
 }
 
 async function doSignOut() {
-  if (!confirm('Sign out of Eegai G Meet? Attendance tracking stops until you sign in again.')) return;
+  if (!confirm('Sign out of Eegai G Meet? You can then choose another Gmail account.')) return;
   await EG.send({ type: 'signOut' });
-  loadAll();
+  await loadAll();
+  chooseAccount('Choose a Google account');
 }
 
-$('#acctBtn').addEventListener('click', () => (state.profile ? doSignOut() : doSignIn()));
-$('#welcomeSignIn').addEventListener('click', () => doSignIn($('#welcomeError')));
+$('#acctBtn').addEventListener('click', () => chooseAccount('Sign in with Google'));
+$('#welcomeSignIn').addEventListener('click', () => chooseAccount('Sign in with Google'));
 $('#signOutBtn').addEventListener('click', doSignOut);
+$('#switchBtn').addEventListener('click', () => chooseAccount('Switch account'));
+$('#addAcctBtn').addEventListener('click', addAccount);
+
+$('#acctChip').addEventListener('click', e => {
+  e.stopPropagation();
+  const open = $('#acctDrop').classList.toggle('hidden') === false;
+  $('#acctChip').setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', () => $('#acctDrop').classList.add('hidden'));
+$('#acctDrop').addEventListener('click', e => {
+  const b = e.target.closest('[data-menu]');
+  if (!b) return;
+  $('#acctDrop').classList.add('hidden');
+  ({ switch: () => chooseAccount('Switch account'), add: addAccount, sheet: () => openSheet(), signout: doSignOut })[b.dataset.menu]();
+});
 
 async function openSheet(forceNew) {
   const r = await EG.send({ type: 'ensureSheet', forceNew: !!forceNew });

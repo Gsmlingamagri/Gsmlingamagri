@@ -7,6 +7,7 @@ async function render() {
   $('#signedIn').classList.toggle('hidden', !profile);
   if (!profile) return;
 
+  $('#avatar').referrerPolicy = 'no-referrer';
   $('#avatar').src = profile.picture || '../icons/icon48.png';
   $('#userName').textContent = profile.name;
   $('#userEmail').textContent = profile.email;
@@ -31,14 +32,16 @@ async function render() {
   }
 }
 
-$('#signIn').addEventListener('click', async () => {
-  $('#signInError').classList.add('hidden');
-  const r = await EG.send({ type: 'signIn' });
-  if (!r.ok) {
-    $('#signInError').textContent = 'Sign-in failed: ' + r.error;
-    $('#signInError').classList.remove('hidden');
-  }
-  render();
+const openAccounts = () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html#accounts') });
+$('#signIn').addEventListener('click', openAccounts);
+$('#switchAcct').addEventListener('click', openAccounts);
+$('#addAcct').addEventListener('click', () => {
+  // the Google window takes focus and closes this popup; the background finishes the sign-in
+  EG.send({ type: 'addAccount' });
+});
+$('#signOut').addEventListener('click', async () => {
+  await EG.send({ type: 'signOut' });
+  openAccounts(); // pick the next Gmail account
 });
 
 $('#autoAdmit').addEventListener('change', e => EG.saveSettings({ autoAdmit: e.target.checked }));

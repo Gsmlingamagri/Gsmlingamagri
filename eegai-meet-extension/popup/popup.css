@@ -22,3 +22,5 @@ body { width: 340px; background: #fff; }
 .p-meeting.live .p-dot { background: #16a34a; }
 .p-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .p-foot { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); text-align: center; }
+.p-acct-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.p-acct-actions .btn { padding: 5px 6px; font-size: 12px; }

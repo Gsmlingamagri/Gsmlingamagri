@@ -9,7 +9,7 @@ A free Chrome extension for Google Meet with two main jobs:
 
 | Feature | Details |
 |---|---|
-| Google sign-in (required) | Users sign in with their Gmail account, which uses the Apps Script connector, so no Google Cloud Console setup is needed. On first install the dashboard opens with a **Sign in with Google** screen, and tracking stays off until they sign in. |
+| Google sign-in (required), switch / add account, sign out | Users sign in with their Gmail account, which uses the Apps Script connector, so no Google Cloud Console setup is needed. On first install the dashboard opens with a **Sign in with Google** screen, and tracking stays off until they sign in. |
 | Auto Admit button in Meet | A green **Eegai Meet** panel appears in every meeting. Click **Auto Admit** to turn it ON or OFF. When it's ON, "Admit" and "Admit all" requests are accepted automatically. Settings can limit this to **only people in your participant lists**. |
 | Attendance tracking | Starts on its own when you join a call. For each person it logs first In time, last Out time, total duration (rejoins are added up) and the number of joins. |
 | Report on meeting end | When you leave the call or close the tab, a popup window opens with the participant report and the CSV downloads automatically. |
@@ -62,7 +62,12 @@ If you later change `Code.gs`, go to **Deploy → Manage deployments**, edit the
 
 - **Emails.** Google Meet does not show participants' email addresses. Eegai fills in the email by matching each display name to your participant lists. For your own row it uses your signed-in email.
 - **How detection works.** Google Meet has no public attendance API, so the extension reads the Meet page itself (the People panel and the video tiles). It opens the People panel once so that everyone is counted, not just the people whose tiles are on screen. For the most reliable results, use Meet in **English**.
-- **Several Google accounts in one browser.** The connector uses the browser's **default** Google account (the first one you signed in to). If a user switches accounts, the extension notices and asks them to sign in again.
+- **Several Google accounts.** The account menu (top right of the dashboard, or in the toolbar popup) has these options:
+  - **Switch account:** pick any Gmail account signed in to the browser.
+  - **Add another account:** opens Google's own sign-in page to add a new Gmail account.
+  - **Sign out:** signs out of Eegai, then shows the account picker so you can choose a different Gmail.
+
+  Each account saves to its own attendance Sheet. A report is saved to the Sheet of the account that was active when the meeting was recorded.
 - **Browsers.** It works in Chrome, Edge, Brave and other Chromium browsers.
 
 ## Files

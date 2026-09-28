@@ -271,16 +271,13 @@
     document.documentElement.appendChild(widget);
 
     widget.querySelector('.eg-admit').addEventListener('click', async () => {
-      if (!profile) return EG.send({ type: 'openPage', path: 'dashboard/dashboard.html#welcome' });
+      if (!profile) return EG.send({ type: 'openPage', path: 'dashboard/dashboard.html#accounts' });
       settings = await EG.saveSettings({ autoAdmit: !settings.autoAdmit });
       renderWidget();
       if (settings.autoAdmit) runAutoAdmit();
     });
     widget.querySelector('.eg-reports').addEventListener('click', () => EG.send({ type: 'openPage', path: 'dashboard/dashboard.html#reports' }));
-    widget.querySelector('.eg-signin').addEventListener('click', async () => {
-      const r = await EG.send({ type: 'signIn' });
-      if (!r.ok) EG.send({ type: 'openPage', path: 'dashboard/dashboard.html#welcome' });
-    });
+    widget.querySelector('.eg-signin').addEventListener('click', () => EG.send({ type: 'openPage', path: 'dashboard/dashboard.html#accounts' }));
     widget.querySelector('.eg-min').addEventListener('click', e => {
       e.stopPropagation();
       widget.classList.toggle('eg-collapsed');

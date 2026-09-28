@@ -18,8 +18,19 @@
     <a href="#settings" data-tab="settings">Settings</a>
   </nav>
   <div class="account">
-    <img id="acctPic" class="hidden" alt="">
     <button id="acctBtn" class="btn signin">Sign In</button>
+    <div id="acctMenu" class="acct-menu hidden">
+      <button id="acctChip" class="acct-chip" aria-haspopup="menu" aria-expanded="false">
+        <span id="acctAvatar" class="ac-avatar ac-letter"></span><span id="acctEmail" class="email"></span> ▾
+      </button>
+      <div id="acctDrop" class="acct-drop hidden" role="menu">
+        <div class="who"><b id="dropName"></b><small id="dropEmail"></small></div>
+        <button data-menu="switch" role="menuitem">Switch account</button>
+        <button data-menu="add" role="menuitem">Add another account</button>
+        <button data-menu="sheet" role="menuitem">Open my attendance Sheet</button>
+        <button data-menu="signout" class="danger" role="menuitem">Sign out</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -182,6 +193,8 @@
       <div class="row-actions">
         <button id="openSheetBtn" class="btn">Open attendance Sheet</button>
         <button id="newSheetBtn" class="btn ghost">Create a new Sheet</button>
+        <button id="switchBtn" class="btn ghost">Switch account</button>
+        <button id="addAcctBtn" class="btn ghost">Add another account</button>
         <button id="signOutBtn" class="btn red">Sign out</button>
       </div>
     </div>
@@ -260,6 +273,10 @@
       <p><a href="#" id="sampleCsv3">Download the sample CSV</a> to see the upload format.</p>
     </div>
     <div class="card">
+      <h3>Google accounts</h3>
+      <p>Click your email address at the top right to <b>Switch account</b>, <b>Add another account</b> or <b>Sign out</b>. After you sign out, you can pick a different Gmail account. Each account has its own attendance Sheet.</p>
+    </div>
+    <div class="card">
       <h3>Tips</h3>
       <ul>
         <li>Use Google Meet in English for the most reliable detection.</li>
@@ -271,6 +288,7 @@
 </section>
 
 <script src="../lib/common.js"></script>
+<script src="../lib/accounts-ui.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>

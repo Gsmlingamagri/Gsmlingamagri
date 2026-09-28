@@ -6,21 +6,65 @@ const CONNECT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /* ---------------- Google connection (Apps Script bridge, no Cloud Console) ----------------
  * The extension talks to a Google Apps Script web app (apps-script/Code.gs) that runs as the
- * signed-in Google user. It creates and appends to that user's own attendance Sheet.
- * The browser's Google login cookies authenticate the request — no OAuth client ID needed. */
+ * signed-in Google user and writes to that user's own attendance Sheet. The browser's Google
+ * login cookies authenticate the request, so no OAuth client ID is needed.
+ *
+ * Multiple accounts: Google numbers the accounts signed in to the browser (0, 1, 2 …).
+ * The web app is reached as a specific account through /macros/u/<index>/s/<id>/exec, and
+ * accounts.google.com/ListAccounts tells us which email sits at which index. */
+const NOT_CONFIGURED = 'The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).';
+
 async function webAppUrl() {
   const custom = (await EG.getLocal('webAppUrl', '')).trim();
   return custom || (self.EG_CONFIG && self.EG_CONFIG.WEBAPP_URL) || '';
 }
 
+/* https://script.google.com/macros/s/ID/exec -> https://script.google.com/macros/u/N/s/ID/exec */
+function urlForIndex(url, index) {
+  if (index == null || index < 0) return url;
+  return url
+    .replace(/\/macros\/u\/\d+\/s\//, '/macros/s/')
+    .replace(/\/macros\/s\//, '/macros/u/' + index + '/s/');
+}
+
 class NeedsConnect extends Error {}
 
-async function bridge(action, payload) {
-  const url = await webAppUrl();
-  if (!url) throw new Error('The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).');
+/* Google accounts currently signed in to this browser, in Google's own order (= authuser index). */
+let accountsCache = { at: 0, list: null };
+async function listGoogleAccounts(fresh) {
+  if (!fresh && accountsCache.list && Date.now() - accountsCache.at < 30000) return accountsCache.list;
+  let list = null;
+  try {
+    const res = await fetch('https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard', { credentials: 'include' });
+    const data = JSON.parse(await res.text());
+    const rows = Array.isArray(data) ? data.find(x => Array.isArray(x)) || [] : [];
+    // rows come in Google's account order, which is the /u/<index>/ number
+    list = rows.filter(r => Array.isArray(r) && EG.isEmail(r[3])).map((r, i) => ({
+      index: i,
+      name: r[2] || r[3].split('@')[0],
+      email: String(r[3]).toLowerCase(),
+      photo: typeof r[4] === 'string' ? r[4] : ''
+    }));
+  } catch (e) {
+    list = null; // unknown — caller falls back to the default account
+  }
+  accountsCache = { at: Date.now(), list };
+  return list;
+}
+
+async function indexForEmail(email, fresh) {
+  const list = await listGoogleAccounts(fresh);
+  if (!list) return null; // can't tell; use the stored index
+  const hit = list.find(a => a.email === String(email).toLowerCase());
+  return hit ? hit.index : -1;
+}
+
+async function bridgeAt(index, action, payload) {
+  const base = await webAppUrl();
+  if (!base) throw new Error(NOT_CONFIGURED);
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetch(urlForIndex(base, index), {
       method: 'POST',
       credentials: 'include',
       redirect: 'follow',
@@ -40,14 +84,50 @@ async function bridge(action, payload) {
   return data;
 }
 
+/* Call the connector as a saved account, finding its current index first. */
+async function bridgeAs(account, action, payload) {
+  let index = await indexForEmail(account.email);
+  if (index === -1) {
+    index = await indexForEmail(account.email, true);
+    if (index === -1) throw new Error(account.email + ' is signed out of Google in this browser. Use "Switch account" to sign in again.');
+  }
+  if (index == null) index = account.index || 0;
+  const data = await bridgeAt(index, action, Object.assign({ expectEmail: account.email }, payload || {}));
+  if (data.email && data.email.toLowerCase() !== account.email.toLowerCase()) {
+    throw new Error('Google answered as ' + data.email + ' instead of ' + account.email + '. Use "Switch account" to reconnect.');
+  }
+  if (index !== account.index) await saveAccount(Object.assign({}, account, { index }));
+  return data;
+}
+
+/* ---------- saved accounts ---------- */
+async function getAccounts() { return EG.getLocal('accounts', []); }
+
+async function saveAccount(acc) {
+  const accounts = await getAccounts();
+  const i = accounts.findIndex(a => a.email === acc.email);
+  if (i >= 0) accounts[i] = Object.assign({}, accounts[i], acc); else accounts.push(acc);
+  await EG.setLocal('accounts', accounts);
+  const profile = await EG.getLocal('profile', null);
+  if (profile && profile.email === acc.email) await EG.setLocal('profile', Object.assign({}, profile, acc));
+  return i >= 0 ? accounts[i] : acc;
+}
+
+async function activate(acc) {
+  const saved = await saveAccount(acc);
+  await EG.setLocal('profile', Object.assign({}, saved, { signedInAt: Date.now() }));
+  syncPending().catch(() => {});
+  return saved;
+}
+
+/* ---------- interactive connect ---------- */
 let connecting = null;
 
-function connectInteractive() {
+/* Opens a Google window at `startUrl` and waits until `probe()` succeeds (or the window closes). */
+function waitInWindow(startUrl, probe) {
   if (connecting) return connecting;
   connecting = (async () => {
-    const url = await webAppUrl();
-    if (!url) throw new Error('The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).');
-    const win = await chrome.windows.create({ url: url + '?action=connect', type: 'popup', width: 560, height: 720, focused: true });
+    const win = await chrome.windows.create({ url: startUrl, type: 'popup', width: 560, height: 720, focused: true });
     let closed = false;
     const onRemoved = id => { if (id === win.id) closed = true; };
     chrome.windows.onRemoved.addListener(onRemoved);
@@ -55,14 +135,12 @@ function connectInteractive() {
       const started = Date.now();
       while (Date.now() - started < CONNECT_TIMEOUT_MS) {
         await new Promise(r => setTimeout(r, 2500));
-        try {
-          const info = await bridge('ping');
+        const result = await probe(win).catch(e => { if (e instanceof NeedsConnect) return null; throw e; });
+        if (result) {
           if (!closed) chrome.windows.remove(win.id).catch(() => {});
-          return info;
-        } catch (e) {
-          if (!(e instanceof NeedsConnect)) throw e;
-          if (closed) throw new Error('Sign-in window was closed before finishing');
+          return result;
         }
+        if (closed) throw new Error('The Google window was closed before finishing');
       }
       throw new Error('Sign-in timed out — please try again');
     } finally {
@@ -73,55 +151,118 @@ function connectInteractive() {
   return connecting;
 }
 
-async function signIn() {
-  let info;
-  try { info = await bridge('ping'); } catch (e) {
-    if (!(e instanceof NeedsConnect)) throw e;
-    info = await connectInteractive();
-  }
-  const email = info.email || '';
-  const profile = {
+function accountFrom(info, index, g) {
+  const email = String(info.email || (g && g.email) || '').toLowerCase();
+  return {
     email,
-    name: info.name || email.split('@')[0] || 'Google user',
-    picture: '',
-    sheetUrl: info.sheetUrl || '',
-    signedInAt: Date.now()
+    index,
+    name: (g && g.name) || email.split('@')[0] || 'Google user',
+    picture: (g && g.photo) || '',
+    sheetUrl: info.sheetUrl || ''
   };
-  await EG.setLocal('profile', profile);
-  syncPending().catch(() => {});
-  return profile;
 }
 
-async function signOut() {
-  // We never hold Google tokens; disconnecting just forgets the account locally.
+/* Connect (or switch to) the Google account at browser index `index`. */
+async function connectIndex(index) {
+  const base = await webAppUrl();
+  if (!base) throw new Error(NOT_CONFIGURED);
+  const list = await listGoogleAccounts(true);
+  const g = list && list.find(a => a.index === index);
+  let info;
+  try {
+    info = await bridgeAt(index, 'ping', g ? { expectEmail: g.email } : {});
+  } catch (e) {
+    if (!(e instanceof NeedsConnect)) throw e;
+    info = await waitInWindow(urlForIndex(base, index) + '?action=connect', () => bridgeAt(index, 'ping'));
+  }
+  if (g && info.email && info.email.toLowerCase() !== g.email) {
+    throw new Error('Google answered as ' + info.email + ' instead of ' + g.email + '. Please try again.');
+  }
+  return activate(accountFrom(info, index, g));
+}
+
+/* Sign in to an extra Google account in the browser, then connect it. */
+async function addGoogleAccount() {
+  const base = await webAppUrl();
+  if (!base) throw new Error(NOT_CONFIGURED);
+  const before = (await listGoogleAccounts(true)) || [];
+  const known = new Set(before.map(a => a.email));
+  const guess = before.length; // Google normally gives the new account the next index
+  const cont = urlForIndex(base, guess) + '?action=connect';
+  let redirected = false;
+
+  const result = await waitInWindow(
+    'https://accounts.google.com/AddSession?continue=' + encodeURIComponent(cont),
+    async win => {
+      const now = await listGoogleAccounts(true);
+      const added = now && now.find(a => !known.has(a.email));
+      if (!added) return null;
+      if (added.index !== guess && !redirected) {
+        // Google put the new account at a different index: send the window to the right connect page
+        redirected = true;
+        const [tab] = await chrome.tabs.query({ windowId: win.id });
+        if (tab) chrome.tabs.update(tab.id, { url: urlForIndex(base, added.index) + '?action=connect' });
+      }
+      const info = await bridgeAt(added.index, 'ping', { expectEmail: added.email });
+      return { info, added };
+    }
+  );
+  return activate(accountFrom(result.info, result.added.index, result.added));
+}
+
+/* First sign-in / "Sign in with Google": use the browser's default Google account. */
+async function signIn() {
+  const list = await listGoogleAccounts(true);
+  if (list && !list.length) return addGoogleAccount();
+  return connectIndex(list && list.length ? list[0].index : 0);
+}
+
+async function switchAccount(email) {
+  const index = await indexForEmail(email, true);
+  if (index === -1) throw new Error(email + ' is no longer signed in to Google in this browser. Choose "Add another account".');
+  return connectIndex(index == null ? 0 : index);
+}
+
+async function signOut(forget) {
+  // We never hold Google tokens; signing out forgets the active account in the extension.
+  const profile = await EG.getLocal('profile', null);
+  if (profile && forget) {
+    const accounts = (await getAccounts()).filter(a => a.email !== profile.email);
+    await EG.setLocal('accounts', accounts);
+  }
   await chrome.storage.local.remove('profile');
 }
 
-async function saveSheetUrl(sheetUrl) {
+async function accountOverview() {
+  const [google, saved, profile] = await Promise.all([listGoogleAccounts(true), getAccounts(), EG.getLocal('profile', null)]);
+  return {
+    google, // null when Google's account list could not be read
+    saved,
+    active: profile ? profile.email : ''
+  };
+}
+
+/* ---------- sheet operations ---------- */
+async function activeAccount() {
   const profile = await EG.getLocal('profile', null);
-  if (profile && sheetUrl && profile.sheetUrl !== sheetUrl) {
-    profile.sheetUrl = sheetUrl;
-    await EG.setLocal('profile', profile);
-  }
+  if (!profile) throw new Error('Please sign in with Google first');
+  return profile;
 }
 
 async function ensureSheet(forceNew) {
-  const profile = await EG.getLocal('profile', null);
-  if (!profile) throw new Error('Please sign in with Google first');
-  const info = await bridge(forceNew ? 'newSheet' : 'ping');
-  if (info.email && profile.email && info.email.toLowerCase() !== profile.email.toLowerCase()) {
-    throw new Error('Your browser is now signed in to Google as ' + info.email + ', not ' + profile.email + '. Sign out and sign in again.');
-  }
-  await saveSheetUrl(info.sheetUrl);
+  const acc = await activeAccount();
+  const info = await bridgeAs(acc, forceNew ? 'newSheet' : 'ping');
+  await saveAccount({ email: acc.email, sheetUrl: info.sheetUrl });
   return info.sheetUrl;
 }
 
+/* A report is saved to the Sheet of the account that recorded it (if still connected), else the active one. */
 async function appendReport(report) {
-  const profile = await EG.getLocal('profile', null);
-  if (!profile) throw new Error('Please sign in with Google first');
-  const rows = EG.reportRows(report);
-  const info = await bridge('append', { rows, expectEmail: profile.email });
-  await saveSheetUrl(info.sheetUrl);
+  const active = await activeAccount();
+  const owner = report.owner && (await getAccounts()).find(a => a.email === report.owner);
+  const acc = owner || active;
+  const info = await bridgeAs(acc, 'append', { rows: EG.reportRows(report) });
+  await saveAccount({ email: acc.email, sheetUrl: info.sheetUrl });
   return info.sheetUrl;
 }
 
@@ -236,7 +377,15 @@ const handlers = {
     return { profile, settings, connectorReady, sheetUrl: (profile && profile.sheetUrl) || '' };
   },
   async signIn() { return { profile: await signIn() }; },
-  async signOut() { await signOut(); return {}; },
+  async signOut(msg) { await signOut(!!msg.forget); return {}; },
+  async accounts() { return await accountOverview(); },
+  async connectIndex(msg) { return { profile: await connectIndex(Number(msg.index) || 0) }; },
+  async switchAccount(msg) { return { profile: await switchAccount(msg.email) }; },
+  async addAccount() { return { profile: await addGoogleAccount() }; },
+  async forgetAccount(msg) {
+    await EG.setLocal('accounts', (await getAccounts()).filter(a => a.email !== msg.email));
+    return {};
+  },
   async sessionUpdate(msg, sender) {
     const s = msg.session;
     s.tabId = sender.tab ? sender.tab.id : s.tabId;
