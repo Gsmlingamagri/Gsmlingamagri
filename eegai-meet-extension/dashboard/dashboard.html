@@ -48,7 +48,7 @@
     </ol>
     <button id="welcomeSignIn" class="btn blue pill big">Sign in with Google</button>
     <p class="muted small">A Google window opens — choose your Gmail account and click <b>Allow</b> once. No passwords are stored by Eegai.</p>
-    <p id="connectorMissing" class="error hidden">Setup needed: the Google Sheet connector URL is empty. Open <a href="#settings">Settings</a> and paste the Apps Script web app URL (see README).</p>
+    <p id="connectorMissing" class="error hidden">Setup needed: the Google Sheet connector URL is empty or invalid. Open <a href="#settings">Settings</a> and paste the Apps Script web app URL (see README).</p>
     <p id="welcomeError" class="error hidden"></p>
   </div>
 </section>
@@ -206,6 +206,10 @@
         <input id="webAppUrl" class="input" placeholder="https://script.google.com/macros/s/.../exec">
         <button id="saveWebAppUrl" class="btn">Save</button>
       </div>
+      <div class="row-actions" style="margin-top:10px">
+        <button id="testConnector" class="btn ghost sm">Test connection</button>
+        <span id="connectorResult" class="muted small"></span>
+      </div>
     </div>
 
     <div class="card">
@@ -259,6 +263,10 @@
       <div class="add-row">
         <input id="webAppUrl" class="input" placeholder="https://script.google.com/macros/s/.../exec">
         <button id="saveWebAppUrl" class="btn">Save</button>
+      </div>
+      <div class="row-actions" style="margin-top:10px">
+        <button id="testConnector" class="btn ghost sm">Test connection</button>
+        <span id="connectorResult" class="muted small"></span>
       </div>
     </div>
 

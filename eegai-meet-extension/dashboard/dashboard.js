@@ -14,7 +14,7 @@ let currentList = null; // working copy being edited
 function showTab() {
   let tab = (location.hash || '#reports').slice(1);
   if (!['welcome', 'reports', 'lists', 'settings', 'help'].includes(tab)) tab = 'reports';
-  if (!state.profile && tab !== 'help' && !(tab === 'settings' && !state.connectorReady)) tab = 'welcome';
+  if (!state.profile && tab !== 'help' && tab !== 'settings') tab = 'welcome'; // settings stay reachable to fix the connector
   if (state.profile && tab === 'welcome') tab = 'reports';
   $$('.page').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
   $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
@@ -394,11 +394,23 @@ $('#exportList').addEventListener('click', () => {
 
 /* ================= settings ================= */
 $('#saveWebAppUrl').addEventListener('click', async () => {
-  const v = $('#webAppUrl').value.trim();
-  if (v && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)) return EG.toast('Paste the Web app URL ending in /exec', true);
+  const v = $('#webAppUrl').value.trim().split('?')[0].split('#')[0].replace(/\/macros\/u\/\d+\/s\//, '/macros/s/');
+  if (v && /\/dev$/.test(v)) return EG.toast('That is the /dev test link. Use the Web app URL ending in /exec', true);
+  if (v && !/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/.test(v)) return EG.toast('Paste the Web app URL ending in /exec', true);
   await EG.setLocal('webAppUrl', v);
+  $('#webAppUrl').value = v;
   EG.toast('Connector saved');
   loadAll();
+  if (v) $('#testConnector').click();
+});
+
+$('#testConnector').addEventListener('click', async () => {
+  const out = $('#connectorResult');
+  out.className = 'muted small';
+  out.textContent = 'Testing…';
+  const r = await EG.send({ type: 'testConnector' });
+  out.className = 'small ' + (r.ok ? 'ok-text' : 'error');
+  out.textContent = r.ok ? r.message : r.error;
 });
 
 function renderSettings() {

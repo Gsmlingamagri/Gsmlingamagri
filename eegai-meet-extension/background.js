@@ -14,17 +14,82 @@ const CONNECT_TIMEOUT_MS = 5 * 60 * 1000;
  * accounts.google.com/ListAccounts tells us which email sits at which index. */
 const NOT_CONFIGURED = 'The Google Sheet connector is not set up yet. Add the Apps Script web app URL in Settings (see README).';
 
-async function webAppUrl() {
-  const custom = (await EG.getLocal('webAppUrl', '')).trim();
-  return custom || (self.EG_CONFIG && self.EG_CONFIG.WEBAPP_URL) || '';
+const CONNECTOR_HELP = 'Check the Apps Script deployment: Deploy → Manage deployments → Web app, ' +
+  'Execute as "User accessing the web app", Who has access "Anyone with Google account", ' +
+  'and copy the Web app URL ending in /exec (not the editor link or the /dev test link).';
+
+/* Clean up whatever was pasted: drop ?query, #hash and any /u/N/ account part. */
+function normalizeWebAppUrl(raw) {
+  let url = String(raw || '').trim();
+  if (!url) return '';
+  url = url.split('#')[0].split('?')[0].replace(/\/+$/, '');
+  url = url.replace(/\/macros\/u\/\d+\/s\//, '/macros/s/');
+  return url;
 }
 
-/* https://script.google.com/macros/s/ID/exec -> https://script.google.com/macros/u/N/s/ID/exec */
+function webAppUrlProblem(url) {
+  if (!url) return NOT_CONFIGURED;
+  if (/\/dev$/.test(url)) return 'The connector URL ends in /dev (test link). Use the Web app URL that ends in /exec. ' + CONNECTOR_HELP;
+  if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/.test(url)) {
+    return 'The connector URL is not a Web app URL (' + url.slice(0, 60) + '…). ' + CONNECTOR_HELP;
+  }
+  return '';
+}
+
+async function webAppUrl() {
+  const custom = normalizeWebAppUrl(await EG.getLocal('webAppUrl', ''));
+  return custom || normalizeWebAppUrl(self.EG_CONFIG && self.EG_CONFIG.WEBAPP_URL);
+}
+
+async function checkedWebAppUrl() {
+  const url = await webAppUrl();
+  const problem = webAppUrlProblem(url);
+  if (problem) throw new Error(problem);
+  return url;
+}
+
+/* The default account (index 0) uses the plain URL; other accounts use /macros/u/N/s/…/exec. */
 function urlForIndex(url, index) {
-  if (index == null || index < 0) return url;
-  return url
-    .replace(/\/macros\/u\/\d+\/s\//, '/macros/s/')
-    .replace(/\/macros\/s\//, '/macros/u/' + index + '/s/');
+  if (!index || index < 0) return url;
+  return url.replace(/^https:\/\/script\.google\.com\/macros\/s\//, 'https://script.google.com/macros/u/' + index + '/s/');
+}
+
+/* Load the web app page the way the sign-in window would and see whether Google can find it.
+ * 'ok' = page exists (connected or asking for permission), 'missing' = Google's "unable to open the file". */
+async function probeWebApp(url) {
+  try {
+    const res = await fetch(url + '?action=probe', { credentials: 'include', redirect: 'follow' });
+    const text = await res.text();
+    if (res.status === 404 || /unable to open the file|check the address and try again/i.test(text)) return 'missing';
+    return 'ok';
+  } catch (e) {
+    return 'offline';
+  }
+}
+
+/* Pick the URL to open for this account, falling back to the plain URL if /u/N/ is refused. */
+async function connectUrlFor(index) {
+  const base = await checkedWebAppUrl();
+  const first = urlForIndex(base, index);
+  let state = await probeWebApp(first);
+  if (state === 'offline') throw new Error('Network error — check your internet connection');
+  if (state === 'ok') return first;
+  if (first !== base && (await probeWebApp(base)) === 'ok') return base;
+  throw new Error('Google says it cannot open the connector ("Sorry, unable to open the file"). ' + CONNECTOR_HELP);
+}
+
+async function testConnector() {
+  const base = await checkedWebAppUrl();
+  const state = await probeWebApp(base);
+  if (state === 'offline') throw new Error('Network error — check your internet connection');
+  if (state === 'missing') throw new Error('Google says it cannot open the connector ("Sorry, unable to open the file"). ' + CONNECTOR_HELP);
+  try {
+    const info = await bridgeAt(0, 'ping');
+    return 'Connector works. Connected as ' + info.email + '.';
+  } catch (e) {
+    if (e instanceof NeedsConnect) return 'Connector found. Click "Sign in with Google" and press Allow to finish.';
+    throw e;
+  }
 }
 
 class NeedsConnect extends Error {}
@@ -35,8 +100,11 @@ async function listGoogleAccounts(fresh) {
   if (!fresh && accountsCache.list && Date.now() - accountsCache.at < 30000) return accountsCache.list;
   let list = null;
   try {
-    const res = await fetch('https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard', { credentials: 'include' });
-    const data = JSON.parse(await res.text());
+    const LIST_URL = 'https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard';
+    const parse = t => JSON.parse(String(t).replace(/^\)\]\}'\s*/, ''));
+    let data;
+    try { data = parse(await (await fetch(LIST_URL, { credentials: 'include' })).text()); }
+    catch (e) { data = parse(await (await fetch(LIST_URL, { method: 'POST', credentials: 'include' })).text()); }
     const rows = Array.isArray(data) ? data.find(x => Array.isArray(x)) || [] : [];
     // rows come in Google's account order, which is the /u/<index>/ number
     list = rows.filter(r => Array.isArray(r) && EG.isEmail(r[3])).map((r, i) => ({
@@ -60,8 +128,7 @@ async function indexForEmail(email, fresh) {
 }
 
 async function bridgeAt(index, action, payload) {
-  const base = await webAppUrl();
-  if (!base) throw new Error(NOT_CONFIGURED);
+  const base = await checkedWebAppUrl();
   let res;
   try {
     res = await fetch(urlForIndex(base, index), {
@@ -75,6 +142,9 @@ async function bridgeAt(index, action, payload) {
     throw new Error('Network error — check your internet connection');
   }
   const text = await res.text();
+  if (/unable to open the file|check the address and try again/i.test(text)) {
+    throw new Error('Google says it cannot open the connector ("Sorry, unable to open the file"). ' + CONNECTOR_HELP);
+  }
   let data;
   try { data = JSON.parse(text); } catch (e) {
     // Google returned a login / permission page instead of JSON
@@ -164,8 +234,7 @@ function accountFrom(info, index, g) {
 
 /* Connect (or switch to) the Google account at browser index `index`. */
 async function connectIndex(index) {
-  const base = await webAppUrl();
-  if (!base) throw new Error(NOT_CONFIGURED);
+  const base = await checkedWebAppUrl();
   const list = await listGoogleAccounts(true);
   const g = list && list.find(a => a.index === index);
   let info;
@@ -173,7 +242,9 @@ async function connectIndex(index) {
     info = await bridgeAt(index, 'ping', g ? { expectEmail: g.email } : {});
   } catch (e) {
     if (!(e instanceof NeedsConnect)) throw e;
-    info = await waitInWindow(urlForIndex(base, index) + '?action=connect', () => bridgeAt(index, 'ping'));
+    const url = await connectUrlFor(index);
+    const idx = index && url === base ? 0 : index; // Google refused /u/N/, fell back to the default account
+    info = await waitInWindow(url + '?action=connect', () => bridgeAt(idx, 'ping'));
   }
   if (g && info.email && info.email.toLowerCase() !== g.email) {
     throw new Error('Google answered as ' + info.email + ' instead of ' + g.email + '. Please try again.');
@@ -183,8 +254,10 @@ async function connectIndex(index) {
 
 /* Sign in to an extra Google account in the browser, then connect it. */
 async function addGoogleAccount() {
-  const base = await webAppUrl();
-  if (!base) throw new Error(NOT_CONFIGURED);
+  const base = await checkedWebAppUrl();
+  if ((await probeWebApp(base)) === 'missing') {
+    throw new Error('Google says it cannot open the connector ("Sorry, unable to open the file"). ' + CONNECTOR_HELP);
+  }
   const before = (await listGoogleAccounts(true)) || [];
   const known = new Set(before.map(a => a.email));
   const guess = before.length; // Google normally gives the new account the next index
@@ -373,12 +446,13 @@ chrome.alarms.onAlarm.addListener(a => {
 const handlers = {
   async getState() {
     const [profile, settings] = await Promise.all([EG.getLocal('profile', null), EG.getSettings()]);
-    const connectorReady = !!(await webAppUrl());
+    const connectorReady = !webAppUrlProblem(await webAppUrl());
     return { profile, settings, connectorReady, sheetUrl: (profile && profile.sheetUrl) || '' };
   },
   async signIn() { return { profile: await signIn() }; },
   async signOut(msg) { await signOut(!!msg.forget); return {}; },
   async accounts() { return await accountOverview(); },
+  async testConnector() { return { message: await testConnector() }; },
   async connectIndex(msg) { return { profile: await connectIndex(Number(msg.index) || 0) }; },
   async switchAccount(msg) { return { profile: await switchAccount(msg.email) }; },
   async addAccount() { return { profile: await addGoogleAccount() }; },

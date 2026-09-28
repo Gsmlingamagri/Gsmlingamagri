@@ -48,6 +48,23 @@ How it works for your users:
 
 If you later change `Code.gs`, go to **Deploy → Manage deployments**, edit the deployment and choose **New version**. This keeps the same URL.
 
+### Troubleshooting: "Sorry, unable to open the file at present"
+
+This page comes from Google. It means Google can't find the connector at the saved URL. Open **Settings → Google Sheet connector** and click **Test connection**, then check the following:
+
+1. **The URL is the Web app URL.** It must look like `https://script.google.com/macros/s/AKfy…/exec`. It must not be:
+   - the script editor link (`…/home/projects/…/edit`), or
+   - the **Test deployments** link that ends in `/dev`.
+2. **The deployment settings are right.** In the script editor, go to **Deploy → Manage deployments** and click the pencil icon. The settings must be:
+   - **Type:** Web app
+   - **Execute as:** *User accessing the web app*
+   - **Who has access:** *Anyone with Google account*
+
+   If you change anything, choose **Version: New version** and click **Deploy**.
+3. **The deployment is still active.** Archived or deleted deployments give this same error. If you created a brand-new deployment, it has a new URL; copy it into Settings again.
+4. **The owner has approved the script once.** Open the `/exec` URL in a normal browser tab while signed in as the script owner, and approve access once.
+
+
 ## How to use
 
 1. Click the extension icon and choose **Sign in with Google**. Your attendance Sheet is created in your Drive.
